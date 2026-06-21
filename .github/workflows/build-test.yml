@@ -1,6 +1,9 @@
 name: Build Test (Droidspaces)
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - hyper-2
 
 jobs:
   build:
