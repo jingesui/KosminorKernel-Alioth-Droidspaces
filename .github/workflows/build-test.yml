@@ -95,10 +95,40 @@ jobs:
           grep CONFIG_KSU out/.config || echo "WARNING: CONFIG_KSU NOT in .config!"
           make -j$(nproc --all) O=out 2>&1
 
-      - name: Upload Build Artifacts
+      - name: Package AnyKernel3
+        run: |
+          echo "=== Clone AnyKernel3 template ==="
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 ak3
+          echo "=== Copy kernel files ==="
+          cp out/arch/arm64/boot/Image ak3/
+          cp out/arch/arm64/boot/Image.gz ak3/ 2>/dev/null || true
+          # Concatenate all dtbs for sm8250
+          cat out/arch/arm64/boot/dts/vendor/qcom/*.dtb > ak3/dtb 2>/dev/null || true
+          cp out/arch/arm64/boot/dtbo.img ak3/ 2>/dev/null || true
+          echo "=== Write anykernel.sh ==="
+          cat > ak3/anykernel.sh << 'AK3EOF'
+# AnyKernel3 - Alioth (POCO F3 / Redmi K40)
+kernel=Image
+kernelcomp=gz
+device.name1=alioth
+device.name2=aliothin
+supported.versions=11-13
+supported.patchlevels=
+supported.vendorpatchlevels=
+block=boot
+is_slot_device=auto
+ramdisk_compression=auto
+AK3EOF
+          echo "=== Create flashable ZIP ==="
+          cd ak3
+          zip -r9 "../KosminorKernel-Alioth-Droidspaces-$(date +%Y%m%d).zip" * -x ".git/*" -x "README.md"
+          cd ..
+          ls -lh *.zip
+
+      - name: Upload Raw Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: KosminorKernel_Alioth_Droidspaces
+          name: KosminorKernel_Alioth_Droidspaces_raw
           path: |
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/Image.gz
@@ -106,3 +136,9 @@ jobs:
             out/arch/arm64/boot/dtbo.img
             out/vmlinux
             out/System.map
+
+      - name: Upload AnyKernel3 ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: KosminorKernel_Alioth_Droidspaces_AK3
+          path: ./*.zip
