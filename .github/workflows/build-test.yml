@@ -26,38 +26,55 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: hyper-2
-          fetch-depth: 1
 
       - name: Get Toolchain
         run: |
           git clone https://gitlab.com/ThankYouMario/android_prebuilts_clang-standalone.git --depth 1 toolchain/llvm
           git clone https://github.com/KopsourcesORG/python-2.7.18-prebuilt.git --depth=1 toolchain/python2
-          
+
       - name: Processing submodules
         run: |
-          git submodule update --init --remote --rebase --recursive android/Installer
-          git submodule update --init --remote --rebase --recursive Baseband-guard
-          git submodule update --init --remote --rebase --recursive KernelSU
+          git submodule update --init --recursive android/Installer
+          git submodule update --init --recursive Baseband-guard
+          git submodule update --init --recursive KernelSU
           cd KernelSU
           git fetch --tags
           LATEST_TAG=$(git tag -l | sort -V | tail -n1)
+          echo "Latest KernelSU tag: $LATEST_TAG"
           git checkout $LATEST_TAG
-          
+
+      - name: Verify KernelSU integration
+        run: |
+          echo "=== drivers/kernelsu symlink ==="
+          ls -la drivers/kernelsu
+          echo "=== KernelSU source files ==="
+          ls KernelSU/kernel/
+          echo "=== Can Kconfig be found via symlink? ==="
+          test -f drivers/kernelsu/Kconfig && echo "OK: Kconfig found" || {
+            echo "WARN: Kconfig not found via symlink, recreating..."
+            rm -f drivers/kernelsu
+            cp -ra KernelSU/kernel drivers/kernelsu
+            test -f drivers/kernelsu/Kconfig && echo "OK: Kconfig now available"
+          }
+
       - name: Verify Droidspaces configs
         run: |
           echo "=== Droidspaces config check ==="
-          grep -q "CONFIG_PID_NS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "✅ PID_NS" || echo "❌ PID_NS"
-          grep -q "CONFIG_DEVTMPFS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "✅ DEVTMPFS" || echo "❌ DEVTMPFS"
-          grep -q "CONFIG_CGROUP_DEVICE=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "✅ CGROUP_DEVICE" || echo "❌ CGROUP_DEVICE"
-          grep -q "CONFIG_OVERLAY_FS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "✅ OVERLAY_FS" || echo "❌ OVERLAY_FS"
-          grep -q "CONFIG_NET_NS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "✅ NET_NS" || echo "❌ NET_NS"
-          grep -q "CONFIG_VETH=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "✅ VETH" || echo "❌ VETH"
-          grep "CONFIG_KSU" arch/arm64/configs/alioth_kosminor_defconfig
-          
+          for cfg in CONFIG_PID_NS=y CONFIG_DEVTMPFS=y CONFIG_CGROUP_DEVICE=y \
+                     CONFIG_OVERLAY_FS=y CONFIG_NET_NS=y CONFIG_VETH=y; do
+            if grep -q "$cfg" arch/arm64/configs/alioth_kosminor_defconfig; then
+              echo "  OK  $cfg"
+            else
+              echo "  MISSING  $cfg"
+            fi
+          done
+
       - name: Add KSU configs
         run: |
           sed -i -e '$a\'$'\n''CONFIG_KSU=y\nCONFIG_KSU_TAMPER_SYSCALL_TABLE=y\nCONFIG_KSU_THRONE_TRACKER_ALWAYS_THREADED=y' arch/arm64/configs/alioth_kosminor_defconfig
-          
+          echo "=== KSU configs appended ==="
+          tail -5 arch/arm64/configs/alioth_kosminor_defconfig
+
       - name: Build Kernel
         run: |
           export LOCALVERSION="-KosminorKernel-Droidspaces"
@@ -75,6 +92,8 @@ jobs:
           export CLANG_TRIPLE="aarch64-linux-gnu-"
           export CROSS_COMPILE="aarch64-linux-android-"
           make O=out alioth_kosminor_defconfig
+          echo "=== CONFIG_KSU in .config ==="
+          grep CONFIG_KSU out/.config || echo "WARNING: CONFIG_KSU NOT in .config!"
           make -j$(nproc --all) O=out 2>&1
 
       - name: Upload Build Artifacts
