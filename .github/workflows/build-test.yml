@@ -70,7 +70,7 @@ jobs:
 
       - name: Add KSU configs
         run: |
-          sed -i -e '$a\'$'\n''CONFIG_KSU=y\nCONFIG_KSU_TAMPER_SYSCALL_TABLE=y\nCONFIG_KSU_THRONE_TRACKER_ALWAYS_THREADED=y' arch/arm64/configs/alioth_kosminor_defconfig
+          sed -i -e '$a\'$'\n''CONFIG_KSU=y\nCONFIG_KSU_THRONE_TRACKER_ALWAYS_THREADED=y' arch/arm64/configs/alioth_kosminor_defconfig
           echo "=== KSU configs appended ==="
           tail -5 arch/arm64/configs/alioth_kosminor_defconfig
 
