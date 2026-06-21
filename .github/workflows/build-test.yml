@@ -43,19 +43,13 @@ jobs:
           echo "Latest KernelSU tag: $LATEST_TAG"
           git checkout $LATEST_TAG
 
-      - name: Verify KernelSU integration
+      - name: Integrate KernelSU into build system
         run: |
-          echo "=== drivers/kernelsu symlink ==="
-          ls -la drivers/kernelsu
           echo "=== KernelSU source files ==="
           ls KernelSU/kernel/
-          echo "=== Can Kconfig be found via symlink? ==="
-          test -f drivers/kernelsu/Kconfig && echo "OK: Kconfig found" || {
-            echo "WARN: Kconfig not found via symlink, recreating..."
-            rm -f drivers/kernelsu
-            cp -ra KernelSU/kernel drivers/kernelsu
-            test -f drivers/kernelsu/Kconfig && echo "OK: Kconfig now available"
-          }
+          echo "=== Add KernelSU to core-y in root Makefile ==="
+          sed -i '/^core-y.*kernel\/ certs\/ mm\/ fs\/ ipc\/ security\/ crypto\/ block\//s/$/ KernelSU\/kernel\//' Makefile
+          grep '^core-y' Makefile
 
       - name: Verify Droidspaces configs
         run: |
