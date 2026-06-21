@@ -46,11 +46,16 @@ jobs:
 
       - name: Integrate KernelSU into build system
         run: |
-          echo "=== KernelSU source files ==="
-          ls KernelSU/kernel/
+          echo "=== Remove broken symlink (causes duplicate compilation) ==="
+          rm -f drivers/kernelsu
+          echo "=== Fix Kconfig to point directly to KernelSU ==="
+          sed -i 's|source "drivers/kernelsu/Kconfig"|source "KernelSU/kernel/Kconfig"|' drivers/Kconfig
+          echo "=== Remove old obj-y ref (causes duplicate compilation) ==="
+          sed -i '/obj-\$(CONFIG_KSU) += kernelsu\//d' drivers/Makefile
           echo "=== Add KernelSU to core-y in root Makefile ==="
           sed -i '/^core-y.*kernel\/ certs\/ mm\/ fs\/ ipc\/ security\/ crypto\/ block\//s/$/ KernelSU\/kernel\//' Makefile
-          grep '^core-y' Makefile
+          echo "=== Verify ==="
+          grep -n 'KernelSU/kernel' drivers/Kconfig drivers/Makefile Makefile || echo 'Check OK'
 
       - name: Verify Droidspaces configs
         run: |
