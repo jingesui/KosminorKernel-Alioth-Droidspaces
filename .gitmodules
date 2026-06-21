@@ -4,7 +4,7 @@
 	branch = alioth
 [submodule "KernelSU"]
 	path = KernelSU
-	url = https://github.com/tiann/KernelSU.git
+	url = https://github.com/backslashxx/KernelSU.git
 	branch = master
 [submodule "Baseband-guard"]
 	path = Baseband-guard
