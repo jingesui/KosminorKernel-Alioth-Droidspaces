@@ -46,17 +46,19 @@ jobs:
       - name: Verify Droidspaces configs
         run: |
           echo "=== Droidspaces config check ==="
-          grep -q "CONFIG_PID_NS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "✅ PID_NS" || echo "❌ PID_NS"
-          grep -q "CONFIG_DEVTMPFS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "✅ DEVTMPFS" || echo "❌ DEVTMPFS"
-          grep -q "CONFIG_CGROUP_DEVICE=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "✅ CGROUP_DEVICE" || echo "❌ CGROUP_DEVICE"
-          grep -q "CONFIG_OVERLAY_FS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "✅ OVERLAY_FS" || echo "❌ OVERLAY_FS"
-          grep -q "CONFIG_NET_NS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "✅ NET_NS" || echo "❌ NET_NS"
-          grep -q "CONFIG_VETH=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "✅ VETH" || echo "❌ VETH"
-          grep "CONFIG_KSU" arch/arm64/configs/alioth_kosminor_defconfig
+          grep -q "CONFIG_PID_NS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: PID_NS" || echo "FAIL: PID_NS"
+          grep -q "CONFIG_DEVTMPFS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: DEVTMPFS" || echo "FAIL: DEVTMPFS"
+          grep -q "CONFIG_CGROUP_DEVICE=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: CGROUP_DEVICE" || echo "FAIL: CGROUP_DEVICE"
+          grep -q "CONFIG_OVERLAY_FS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: OVERLAY_FS" || echo "FAIL: OVERLAY_FS"
+          grep -q "CONFIG_NET_NS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: NET_NS" || echo "FAIL: NET_NS"
+          grep -q "CONFIG_VETH=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: VETH" || echo "FAIL: VETH"
+          echo "=== All Droidspaces configs verified ==="
           
       - name: Add KSU configs
         run: |
-          sed -i -e '$a\'$'\n''CONFIG_KSU=y\nCONFIG_KSU_TAMPER_SYSCALL_TABLE=y\nCONFIG_KSU_THRONE_TRACKER_ALWAYS_THREADED=y' arch/arm64/configs/alioth_kosminor_defconfig
+          echo "CONFIG_KSU=y" >> arch/arm64/configs/alioth_kosminor_defconfig
+          echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=y" >> arch/arm64/configs/alioth_kosminor_defconfig
+          echo "CONFIG_KSU_THRONE_TRACKER_ALWAYS_THREADED=y" >> arch/arm64/configs/alioth_kosminor_defconfig
           
       - name: Build Kernel
         run: |
