@@ -1,4 +1,4 @@
-name: Build Test (Droidspaces)
+name: Build Alioth (Droidspaces)
 on:
   workflow_dispatch:
   push:
