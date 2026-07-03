@@ -72,25 +72,13 @@ jobs:
             fi
           done
 
- - name: Add KernelSU Kernel Configs
-  run: |
-    set -euo pipefail
-    CONFIG_PATH="arch/arm64/configs/alioth_kosminor_defconfig"
-
-    # 校验配置文件是否存在，不存在直接终止工作流
-    if [ ! -f "${CONFIG_PATH}" ]; then
-      echo "ERROR: Defconfig file ${CONFIG_PATH} not found!"
-      exit 1
-    fi
-
-    # 逐个判断配置项，不存在才追加，防止多次运行重复冗余配置
-    grep -Fxq "CONFIG_KSU=y" "${CONFIG_PATH}" || echo "CONFIG_KSU=y" >> "${CONFIG_PATH}"
-    grep -Fxq "CONFIG_KSU_THRONE_TRACKER_ALWAYS_THREADED=y" "${CONFIG_PATH}" || echo "CONFIG_KSU_THRONE_TRACKER_ALWAYS_THREADED=y" >> "${CONFIG_PATH}"
-
-    echo "✅ KernelSU basic configurations added successfully"
-    echo "==== Last 5 lines of defconfig ===="
-    tail -5 "${CONFIG_PATH}"
-  shell: bash
+      - name: Add KSU configs
+        run: |
+          sed -i -e '$a\'$'\n''CONFIG_KSU=y\nCONFIG_KSU_THRONE_TRACKER_ALWAYS_THREADED=y' arch/arm64/configs/alioth_kosminor_defconfig
+          echo "=== Disable KSU LSM hooks (may cause bootloop) ==="
+          echo "# CONFIG_KSU_LSM_SECURITY_HOOKS is not set" >> arch/arm64/configs/alioth_kosminor_defconfig
+          echo "=== KSU configs appended ==="
+          tail -5 arch/arm64/configs/alioth_kosminor_defconfig
 
 
       - name: Build Kernel
