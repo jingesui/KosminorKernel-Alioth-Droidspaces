@@ -1,0 +1,92 @@
+name: Build Test (Droidspaces)
+on: [workflow_dispatch]
+
+jobs:
+  build:
+    name: Build KosminorKernel with Droidspaces configs
+    runs-on: ubuntu-24.04
+    steps:
+
+      - name: Set Beijing timezone
+        uses: szenius/set-timezone@v1.2
+        with:
+          timezoneLinux: "Asia/Shanghai"
+
+      - name: Set SWAP to 5GiB
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 5
+
+      - name: Initialize Compilation Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install git automake build-essential bc -y
+          
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: hyper-2
+          fetch-depth: 1
+
+      - name: Get Toolchain
+        run: |
+          git clone https://gitlab.com/ThankYouMario/android_prebuilts_clang-standalone.git --depth 1 toolchain/llvm
+          git clone https://github.com/KopsourcesORG/python-2.7.18-prebuilt.git --depth=1 toolchain/python2
+          
+      - name: Processing submodules
+        run: |
+          git submodule update --init --remote --rebase --recursive android/Installer
+          git submodule update --init --remote --rebase --recursive Baseband-guard
+          git submodule update --init --remote --rebase --recursive KernelSU
+          cd KernelSU
+          git fetch --tags
+          LATEST_TAG=$(git tag -l | sort -V | tail -n1)
+          git checkout $LATEST_TAG
+          
+      - name: Verify Droidspaces configs
+        run: |
+          echo "=== Droidspaces config check ==="
+          grep -q "CONFIG_PID_NS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: PID_NS" || echo "FAIL: PID_NS"
+          grep -q "CONFIG_DEVTMPFS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: DEVTMPFS" || echo "FAIL: DEVTMPFS"
+          grep -q "CONFIG_CGROUP_DEVICE=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: CGROUP_DEVICE" || echo "FAIL: CGROUP_DEVICE"
+          grep -q "CONFIG_OVERLAY_FS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: OVERLAY_FS" || echo "FAIL: OVERLAY_FS"
+          grep -q "CONFIG_NET_NS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: NET_NS" || echo "FAIL: NET_NS"
+          grep -q "CONFIG_VETH=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: VETH" || echo "FAIL: VETH"
+          echo "=== All Droidspaces configs verified ==="
+          
+      - name: Add KSU configs
+        run: |
+          echo "CONFIG_KSU=y" >> arch/arm64/configs/alioth_kosminor_defconfig
+          echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=y" >> arch/arm64/configs/alioth_kosminor_defconfig
+          echo "CONFIG_KSU_THRONE_TRACKER_ALWAYS_THREADED=y" >> arch/arm64/configs/alioth_kosminor_defconfig
+          
+      - name: Build Kernel
+        run: |
+          export LOCALVERSION="-KosminorKernel-Droidspaces"
+          export KBUILD_BUILD_HOST=Github-Action
+          export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
+          export ARCH="arm64"
+          export SUBARCH="arm64"
+          export PATH="$GITHUB_WORKSPACE/toolchain/llvm/bin:$GITHUB_WORKSPACE/toolchain/python2/bin:$PATH"
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/toolchain/llvm/lib64:$GITHUB_WORKSPACE/toolchain/python2/lib:$LD_LIBRARY_PATH"
+          export KBUILD_COMPILER_STRING=$(clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')
+          export KBUILD_LINKER_STRING=$(ld.lld --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//' | sed 's/(compatible with [^)]*)//')
+          export CC=clang
+          export LLVM=1
+          export LLVM_IAS=1
+          export CLANG_TRIPLE="aarch64-linux-gnu-"
+          export CROSS_COMPILE="aarch64-linux-android-"
+          make O=out alioth_kosminor_defconfig
+          make -j$(nproc --all) O=out 2>&1
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: KosminorKernel_Alioth_Droidspaces
+          path: |
+            out/arch/arm64/boot/Image
+            out/arch/arm64/boot/Image.gz
+            out/arch/arm64/boot/dts/vendor/qcom/*.dtb
+            out/arch/arm64/boot/dtbo.img
+            out/vmlinux
+            out/System.map
