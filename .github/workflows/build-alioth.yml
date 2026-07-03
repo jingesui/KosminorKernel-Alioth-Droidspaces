@@ -1,4 +1,4 @@
-name: Build Test (Droidspaces)
+name: Build Alioth
 on:
   workflow_dispatch:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build KosminorKernel with Droidspaces configs
+    name: Build Alioth
     runs-on: ubuntu-24.04
     steps:
 
@@ -118,7 +118,7 @@ jobs:
             echo "kernelcomp=gz"
             echo "device.name1=alioth"
             echo "device.name2=aliothin"
-            echo "supported.versions=11-13"
+            echo "supported.versions=15"
             echo "supported.patchlevels="
             echo "supported.vendorpatchlevels="
             echo "block=boot"
@@ -127,14 +127,14 @@ jobs:
           } > ak3/anykernel.sh
           echo "=== Create flashable ZIP ==="
           cd ak3
-          zip -r9 "../KosminorKernel-Alioth-Droidspaces-$(date +%Y%m%d).zip" * -x ".git/*" -x "README.md"
+          zip -r9 "../Alioth-Kernel-$(date +%Y%m%d).zip" * -x ".git/*" -x "README.md"
           cd ..
           ls -lh *.zip
 
       - name: Upload Raw Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: KosminorKernel_Alioth_Droidspaces_raw
+          name: Alioth_Kernel_raw
           path: |
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/Image.gz
@@ -146,5 +146,5 @@ jobs:
       - name: Upload AnyKernel3 ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: KosminorKernel_Alioth_Droidspaces_AK3
+          name: Alioth_Kernel_AK3
           path: ./*.zip
