@@ -82,7 +82,7 @@ jobs:
 
       - name: Build Kernel
         run: |
-          export LOCALVERSION="-perf-g92c089fc2d37"
+          export LOCALVERSION=${{ steps.get-tag.outputs.TAG_NAME }}
           export KBUILD_BUILD_HOST=Github-Action
           export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
           export ARCH="arm64"
