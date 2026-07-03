@@ -82,7 +82,7 @@ jobs:
 
       - name: Build Kernel
         run: |
-          export LOCALVERSION="-KosminorKernel-Droidspaces"
+          export LOCALVERSION="-perf-g92c089fc2d37"
           export KBUILD_BUILD_HOST=Github-Action
           export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
           export ARCH="arm64"
