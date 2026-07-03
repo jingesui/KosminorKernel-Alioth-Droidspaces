@@ -83,7 +83,7 @@ jobs:
       - name: Build Kernel
         run: |
           export LOCALVERSION=${{ steps.get-tag.outputs.TAG_NAME }}
-          export KBUILD_BUILD_HOST=Github-Action
+          export KBUILD_BUILD_HOST=AI-Cloud
           export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
           export ARCH="arm64"
           export SUBARCH="arm64"
