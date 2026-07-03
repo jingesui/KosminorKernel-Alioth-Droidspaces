@@ -1,5 +1,9 @@
 name: Build Test (Droidspaces)
-on: [workflow_dispatch]
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - hyper-2
 
 jobs:
   build:
@@ -32,34 +36,50 @@ jobs:
         run: |
           git clone https://gitlab.com/ThankYouMario/android_prebuilts_clang-standalone.git --depth 1 toolchain/llvm
           git clone https://github.com/KopsourcesORG/python-2.7.18-prebuilt.git --depth=1 toolchain/python2
-          
+
       - name: Processing submodules
         run: |
-          git submodule update --init --remote --rebase --recursive android/Installer
-          git submodule update --init --remote --rebase --recursive Baseband-guard
-          git submodule update --init --remote --rebase --recursive KernelSU
+          git submodule update --init --recursive android/Installer
+          git submodule update --init --recursive Baseband-guard
+          git submodule update --init --recursive KernelSU
           cd KernelSU
           git fetch --tags
           LATEST_TAG=$(git tag -l | sort -V | tail -n1)
+          echo "Latest KernelSU tag: $LATEST_TAG"
           git checkout $LATEST_TAG
-          
+
+      - name: Integrate KernelSU into build system
+        run: |
+          echo "=== Remove symlink, copy real directory instead ==="
+          rm -f drivers/kernelsu
+          cp -ra KernelSU/kernel drivers/kernelsu
+          echo "=== Verify integration ==="
+          test -f drivers/kernelsu/Kconfig && echo "Kconfig: OK"
+          test -f drivers/kernelsu/Makefile && echo "Makefile: OK"
+          grep -q 'source.*kernelsu/Kconfig' drivers/Kconfig && echo "Kconfig ref: OK"
+          grep -q 'obj.*kernelsu/' drivers/Makefile && echo "Makefile ref: OK"
+          ls drivers/kernelsu/
+
       - name: Verify Droidspaces configs
         run: |
           echo "=== Droidspaces config check ==="
-          grep -q "CONFIG_PID_NS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: PID_NS" || echo "FAIL: PID_NS"
-          grep -q "CONFIG_DEVTMPFS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: DEVTMPFS" || echo "FAIL: DEVTMPFS"
-          grep -q "CONFIG_CGROUP_DEVICE=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: CGROUP_DEVICE" || echo "FAIL: CGROUP_DEVICE"
-          grep -q "CONFIG_OVERLAY_FS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: OVERLAY_FS" || echo "FAIL: OVERLAY_FS"
-          grep -q "CONFIG_NET_NS=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: NET_NS" || echo "FAIL: NET_NS"
-          grep -q "CONFIG_VETH=y" arch/arm64/configs/alioth_kosminor_defconfig && echo "PASS: VETH" || echo "FAIL: VETH"
-          echo "=== All Droidspaces configs verified ==="
-          
+          for cfg in CONFIG_PID_NS=y CONFIG_DEVTMPFS=y CONFIG_CGROUP_DEVICE=y \
+                     CONFIG_OVERLAY_FS=y CONFIG_NET_NS=y CONFIG_VETH=y; do
+            if grep -q "$cfg" arch/arm64/configs/alioth_kosminor_defconfig; then
+              echo "  OK  $cfg"
+            else
+              echo "  MISSING  $cfg"
+            fi
+          done
+
       - name: Add KSU configs
         run: |
-          echo "CONFIG_KSU=y" >> arch/arm64/configs/alioth_kosminor_defconfig
-          echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=y" >> arch/arm64/configs/alioth_kosminor_defconfig
-          echo "CONFIG_KSU_THRONE_TRACKER_ALWAYS_THREADED=y" >> arch/arm64/configs/alioth_kosminor_defconfig
-          
+          sed -i -e '$a\'$'\n''CONFIG_KSU=y\nCONFIG_KSU_THRONE_TRACKER_ALWAYS_THREADED=y' arch/arm64/configs/alioth_kosminor_defconfig
+          echo "=== Disable KSU LSM hooks (may cause bootloop) ==="
+          echo "# CONFIG_KSU_LSM_SECURITY_HOOKS is not set" >> arch/arm64/configs/alioth_kosminor_defconfig
+          echo "=== KSU configs appended ==="
+          tail -5 arch/arm64/configs/alioth_kosminor_defconfig
+
       - name: Build Kernel
         run: |
           export LOCALVERSION="-KosminorKernel-Droidspaces"
@@ -77,12 +97,44 @@ jobs:
           export CLANG_TRIPLE="aarch64-linux-gnu-"
           export CROSS_COMPILE="aarch64-linux-android-"
           make O=out alioth_kosminor_defconfig
+          echo "=== CONFIG_KSU in .config ==="
+          grep CONFIG_KSU out/.config || echo "WARNING: CONFIG_KSU NOT in .config!"
           make -j$(nproc --all) O=out 2>&1
 
-      - name: Upload Build Artifacts
+      - name: Package AnyKernel3
+        run: |
+          echo "=== Clone AnyKernel3 template ==="
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 ak3
+          echo "=== Copy kernel files ==="
+          cp out/arch/arm64/boot/Image ak3/
+          cp out/arch/arm64/boot/Image.gz ak3/ 2>/dev/null || true
+          # Concatenate all dtbs for sm8250
+          cat out/arch/arm64/boot/dts/vendor/qcom/*.dtb > ak3/dtb 2>/dev/null || true
+          cp out/arch/arm64/boot/dtbo.img ak3/ 2>/dev/null || true
+          echo "=== Write anykernel.sh ==="
+          {
+            echo "# AnyKernel3 - Alioth (POCO F3 / Redmi K40)"
+            echo "kernel=Image"
+            echo "kernelcomp=gz"
+            echo "device.name1=alioth"
+            echo "device.name2=aliothin"
+            echo "supported.versions=11-13"
+            echo "supported.patchlevels="
+            echo "supported.vendorpatchlevels="
+            echo "block=boot"
+            echo "is_slot_device=auto"
+            echo "ramdisk_compression=auto"
+          } > ak3/anykernel.sh
+          echo "=== Create flashable ZIP ==="
+          cd ak3
+          zip -r9 "../KosminorKernel-Alioth-Droidspaces-$(date +%Y%m%d).zip" * -x ".git/*" -x "README.md"
+          cd ..
+          ls -lh *.zip
+
+      - name: Upload Raw Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: KosminorKernel_Alioth_Droidspaces
+          name: KosminorKernel_Alioth_Droidspaces_raw
           path: |
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/Image.gz
@@ -90,3 +142,9 @@ jobs:
             out/arch/arm64/boot/dtbo.img
             out/vmlinux
             out/System.map
+
+      - name: Upload AnyKernel3 ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: KosminorKernel_Alioth_Droidspaces_AK3
+          path: ./*.zip
