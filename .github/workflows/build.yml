@@ -1,9 +1,9 @@
 name: Build KosminorKernel Alioth
 on:
+  workflow_dispatch:
   push:
-    tags:
-      - "C-*"
-
+    branches:
+      - hyper-2
 jobs:
   build:
     name: Build KosminorKernel Alioth by ${{ github.actor }}
