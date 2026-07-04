@@ -1,0 +1,32 @@
+name: Build K40 Kernel with SukiSU
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Kernel Source
+      uses: actions/checkout@v4
+      with:
+        ref: 'hyper-2'
+    - name: Setup Environment
+      run: |
+        sudo apt update
+        sudo apt install -y bc bison build-essential flex gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev lz4
+    - name: Get Clang
+      run: |
+        wget https://github.com/ZyCromerZ/Clang/releases/download/20.0.0-clang-20250119/Clang-20.0.0.tar.gz
+        tar -xf Clang-20.0.0.tar.gz
+    - name: Merge SukiSU Ultra
+      run: |
+        curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
+    - name: Build Kernel
+      run: |
+        mkdir out
+        make O=out ARCH=arm64 alioth_defconfig
+        make O=out ARCH=arm64 -j$(nproc) CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- CC=../clang/clang
+    - name: Upload AnyKernel3
+      uses: actions/upload-artifact@v4
+      with:
+        name: AnyKernel3_K40_SukiSU
+        path: out/arch/arm64/boot/Image.gz-dtb

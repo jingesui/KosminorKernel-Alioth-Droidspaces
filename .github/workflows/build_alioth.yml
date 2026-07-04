@@ -1,0 +1,169 @@
+name: Build Alioth (Droidspaces)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - hyper-2
+
+env:
+  ARCH: arm64
+  SUBARCH: arm64
+  DEFCONFIG: alioth_kosminor_defconfig
+  AK3_ZIP_NAME: KosminorKernel-Alioth-Droidspaces
+jobs:
+  build:
+    name: Build KosminorKernel with Droidspaces configs
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Set Beijing timezone
+        uses: szenius/set-timezone@v1.2
+        with:
+          timezoneLinux: "Asia/Shanghai"
+
+      - name: Set SWAP to 5GiB
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 5
+
+      - name: Initialize Compilation Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install git automake build-essential bc zip perl -y
+          sudo apt clean
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: hyper-2
+          fetch-depth: 0 # 改为0，支持获取完整tag与commit信息
+
+      # 缓存工具链，大幅提速
+      - name: Cache Toolchain
+        uses: actions/cache@v4
+        with:
+          path: toolchain
+          key: ${{ github.job }}-toolchain-v1
+
+      - name: Get Toolchain
+        run: |
+          [ ! -d toolchain/llvm ] && git clone https://gitlab.com/ThankYouMario/android_prebuilts_clang-standalone.git --depth 1 toolchain/llvm
+          [ ! -d toolchain/python2 ] && git clone https://github.com/KopsourcesORG/python-2.7.18-prebuilt.git --depth=1 toolchain/python2
+
+      - name: Processing submodules
+        run: |
+          git submodule update --init --recursive android/Installer Baseband-guard KernelSU
+          cd KernelSU
+          git fetch --tags
+          # 更稳妥取最新语义化tag
+          LATEST_TAG=$(git tag | grep -E '^v[0-9]' | sort -t'v' -k2 -n | tail -n1)
+          echo "Latest KernelSU tag: $LATEST_TAG"
+          git checkout $LATEST_TAG
+
+      - name: Integrate KernelSU into build system
+        run: |
+          rm -rf drivers/kernelsu
+          cp -ra KernelSU/kernel drivers/kernelsu
+          test -f drivers/kernelsu/Kconfig && echo "✅ Kconfig: OK"
+          test -f drivers/kernelsu/Makefile && echo "✅ Makefile: OK"
+          grep -q 'source.*kernelsu/Kconfig' drivers/Kconfig && echo "✅ Kconfig ref: OK"
+          grep -q 'obj.*kernelsu/' drivers/Makefile && echo "✅ Makefile ref: OK"
+
+      - name: Verify Droidspaces required configs
+        run: |
+          echo "=== Droidspaces config check ==="
+          REQUIRED=(
+            CONFIG_PID_NS=y
+            CONFIG_DEVTMPFS=y
+            CONFIG_CGROUP_DEVICE=y
+            CONFIG_OVERLAY_FS=y
+            CONFIG_NET_NS=y
+            CONFIG_VETH=y
+          )
+          for cfg in "${REQUIRED[@]}"; do
+            if grep -w "$cfg" arch/$ARCH/configs/$DEFCONFIG; then
+              echo "✅ $cfg"
+            else
+              echo "❌ MISSING $cfg"
+            fi
+          done
+
+      # 改用merge_config方案，最稳定追加内核配置
+      - name: Generate KSU extra config fragment
+        run: |
+          cat > arch/$ARCH/configs/ksu_fragment.config <<EOF
+          CONFIG_KSU=y
+          CONFIG_KSU_THRONE_TRACKER_ALWAYS_THREADED=y
+          # CONFIG_KSU_LSM_SECURITY_HOOKS is not set
+          EOF
+          make O=out $DEFCONFIG ksu_fragment.config
+
+      - name: Build Kernel
+        run: |
+          # 自动获取当前commit短哈希替代硬编码
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+          export LOCALVERSION="-g${COMMIT_SHORT}"
+          export KBUILD_BUILD_HOST=Github-Action
+          export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr '[:upper:]' '[:lower:]')
+          export PATH="$GITHUB_WORKSPACE/toolchain/llvm/bin:$GITHUB_WORKSPACE/toolchain/python2/bin:$PATH"
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/toolchain/llvm/lib64:$GITHUB_WORKSPACE/toolchain/python2/lib:$LD_LIBRARY_PATH"
+          export CC=clang
+          export LLVM=1
+          export LLVM_IAS=1
+          export CLANG_TRIPLE="aarch64-linux-gnu-"
+          export CROSS_COMPILE="aarch64-linux-android-"
+          # 检查KSU是否成功写入最终.config
+          grep CONFIG_KSU out/.config
+          make -j$(nproc --all) O=out 2>&1 | tee build.log
+
+      - name: Package AnyKernel3 Flashable ZIP
+        run: |
+          rm -rf ak3
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 ak3
+          cp -f out/arch/$ARCH/boot/Image ak3/
+          cp -f out/arch/$ARCH/boot/Image.gz ak3/ 2>/dev/null || true
+          cat out/arch/$ARCH/boot/dts/vendor/qcom/*.dtb > ak3/dtb 2>/dev/null || true
+          cp -f out/arch/$ARCH/boot/dtbo.img ak3/ 2>/dev/null || true
+
+          cat > ak3/anykernel.sh <<EOF
+# AnyKernel3 - Alioth (POCO F3 / Redmi K40)
+kernel=Image
+kernelcomp=gz
+device.name1=alioth
+device.name2=aliothin
+supported.versions=11-13
+supported.patchlevels=
+supported.vendorpatchlevels=
+block=boot
+is_slot_device=auto
+ramdisk_compression=auto
+EOF
+
+          cd ak3
+          ZIP_FILE="${{ env.AK3_ZIP_NAME }}-$(date +%Y%m%d).zip"
+          zip -r9 "../\$ZIP_FILE" * -x ".git/*" "README.md"
+          cd ..
+          ls -lh *.zip build.log
+
+      - name: Upload Build Log
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+
+      - name: Upload Raw Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: KosminorKernel_Alioth_Droidspaces_raw
+          path: |
+            out/arch/arm64/boot/Image
+            out/arch/arm64/boot/Image.gz
+            out/arch/arm64/boot/dts/vendor/qcom/*.dtb
+            out/arch/arm64/boot/dtbo.img
+            out/vmlinux
+            out/System.map
+
+      - name: Upload AnyKernel3 ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: KosminorKernel_Alioth_Droidspaces_AK3
+          path: ./*.zip
