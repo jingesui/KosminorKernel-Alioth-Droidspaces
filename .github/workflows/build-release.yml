@@ -1,8 +1,9 @@
 name: Build KosminorKernel Alioth (Release)
 on:
+  workflow_dispatch:
   push:
-    tags:
-      - "R-*"
+    branches:
+      - hyper-2
 
 jobs:
   build-vanilla:
