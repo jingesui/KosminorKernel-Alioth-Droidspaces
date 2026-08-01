@@ -62,9 +62,6 @@
 #include <linux/oom.h>
 #include <linux/compat.h>
 #include <linux/vmalloc.h>
-#ifdef CONFIG_PERF_HUMANTASK
-#include <linux/sched.h>
-#endif
 
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
@@ -298,7 +295,7 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 		return -ENOMEM;
 	vma_set_anonymous(vma);
 
-	if (down_write_killable(&mm->mmap_sem)) {
+	if (mmap_write_lock_killable(mm)) {
 		err = -EINTR;
 		goto err_free;
 	}
@@ -321,11 +318,11 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 
 	mm->stack_vm = mm->total_vm = 1;
 	arch_bprm_mm_init(mm, vma);
-	up_write(&mm->mmap_sem);
+	mmap_write_unlock(mm);
 	bprm->p = vma->vm_end - sizeof(void *);
 	return 0;
 err:
-	up_write(&mm->mmap_sem);
+	mmap_write_unlock(mm);
 err_free:
 	bprm->vma = NULL;
 	vm_area_free(vma);
@@ -691,7 +688,7 @@ int setup_arg_pages(struct linux_binprm *bprm,
 		    unsigned long stack_top,
 		    int executable_stack)
 {
-	unsigned long ret;
+	int ret;
 	unsigned long stack_shift;
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma = bprm->vma;
@@ -738,7 +735,7 @@ int setup_arg_pages(struct linux_binprm *bprm,
 		bprm->loader -= stack_shift;
 	bprm->exec -= stack_shift;
 
-	if (down_write_killable(&mm->mmap_sem))
+	if (mmap_write_lock_killable(mm))
 		return -EINTR;
 
 	vm_flags = VM_STACK_FLAGS;
@@ -795,7 +792,7 @@ int setup_arg_pages(struct linux_binprm *bprm,
 		ret = -EFAULT;
 
 out_unlock:
-	up_write(&mm->mmap_sem);
+	mmap_write_unlock(mm);
 	return ret;
 }
 EXPORT_SYMBOL(setup_arg_pages);
@@ -1025,9 +1022,9 @@ static int exec_mmap(struct mm_struct *mm)
 		 * through with the exec.  We must hold mmap_sem around
 		 * checking core_state and changing tsk->mm.
 		 */
-		down_read(&old_mm->mmap_sem);
+		mmap_read_lock(old_mm);
 		if (unlikely(old_mm->core_state)) {
-			up_read(&old_mm->mmap_sem);
+			mmap_read_unlock(old_mm);
 			return -EINTR;
 		}
 	}
@@ -1049,13 +1046,11 @@ static int exec_mmap(struct mm_struct *mm)
 	activate_mm(active_mm, mm);
 	if (IS_ENABLED(CONFIG_ARCH_WANT_IRQS_OFF_ACTIVATE_MM))
 		local_irq_enable();
-	lru_gen_use_mm(mm);
 	tsk->mm->vmacache_seqnum = 0;
-	lru_gen_add_mm(mm);
 	vmacache_flush(tsk);
 	task_unlock(tsk);
 	if (old_mm) {
-		up_read(&old_mm->mmap_sem);
+		mmap_read_unlock(old_mm);
 		BUG_ON(active_mm != old_mm);
 		setmax_mm_hiwater_rss(&tsk->signal->maxrss, old_mm);
 		mm_update_next_owner(old_mm);
@@ -1256,29 +1251,11 @@ EXPORT_SYMBOL_GPL(__get_task_comm);
 
 void __set_task_comm(struct task_struct *tsk, const char *buf, bool exec)
 {
-#ifdef CONFIG_PERF_HUMANTASK
-	struct task_struct *parent = find_task_by_vpid(tsk->tgid);
-	char *tmpbuf = kmalloc(128, GFP_KERNEL);
-#endif
+	/* 【新增补丁】如果传入的 tsk 指针为空，直接返回，防止访问 0x880 地址崩溃 */
+	if (unlikely(!tsk))
+		return;
+
 	task_lock(tsk);
-
-#ifdef CONFIG_PERF_HUMANTASK
-	if (!strcmp(parent->comm, "system_server")) {
-		if (!strcmp(buf, "InputDispatcher") ||
-		    !strcmp(buf, "InputReader")) {
-			tsk->human_task = MAX_LEVER + 1;
-		} else if (tmpbuf) {
-			memset(tmpbuf, 0, 128);
-			sprintf(tmpbuf, "Binder:%d_%X", tsk->tgid, 1);
-			// binder/ProcessState.cpp
-			if (!strcmp(tmpbuf, buf))
-				tsk->human_task = 1;
-		}
-	}
-	if (tmpbuf)
-		kfree(tmpbuf);
-#endif
-
 	trace_task_rename(tsk, buf);
 	strlcpy(tsk->comm, buf, sizeof(tsk->comm));
 	task_unlock(tsk);
@@ -1922,18 +1899,11 @@ out_ret:
 	return retval;
 }
 
-#ifdef CONFIG_KSU
-extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
-			void *envp, int *flags);
-#endif
 static int do_execveat_common(int fd, struct filename *filename,
 			      struct user_arg_ptr argv,
 			      struct user_arg_ptr envp,
 			      int flags)
 {
-    #ifdef CONFIG_KSU
-	ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
-    #endif
 	return __do_execve_file(fd, filename, argv, envp, flags, NULL);
 }
 
