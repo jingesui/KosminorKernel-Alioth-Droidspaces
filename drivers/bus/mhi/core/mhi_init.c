@@ -1,4 +1,3 @@
-```c
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2018-2021, The Linux Foundation. All rights reserved. */
 
@@ -2133,4 +2132,3 @@ postcore_initcall(mhi_init);
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("MHI_CORE");
 MODULE_DESCRIPTION("MHI Host Interface");
-```
