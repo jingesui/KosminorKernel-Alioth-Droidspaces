@@ -402,16 +402,20 @@ static int mhi_alloc_aligned_ring_uncached(
 void mhi_deinit_free_irq(struct mhi_controller *mhi_cntrl)
 {
         int i;
-        struct mhi_event *mhi_event = mhi_cntrl->mhi_event;
+        struct mhi_event *mhi_event;
 
-        for (i = 0; i < mhi_cntrl->total_ev_rings; i++, mhi_event++) {
-                if (!mhi_event->request_irq)
-                        continue;
+        if (mhi_cntrl->irq && mhi_cntrl->mhi_event) {
+                mhi_event = mhi_cntrl->mhi_event;
+                for (i = 0; i < mhi_cntrl->total_ev_rings; i++, mhi_event++) {
+                        if (!mhi_event->request_irq)
+                                continue;
 
-                free_irq(mhi_cntrl->irq[mhi_event->msi], mhi_event);
+                        free_irq(mhi_cntrl->irq[mhi_event->msi], mhi_event);
+                }
         }
 
-        free_irq(mhi_cntrl->irq[0], mhi_cntrl);
+        if (mhi_cntrl->irq)
+                free_irq(mhi_cntrl->irq[0], mhi_cntrl);
 }
 
 int mhi_init_irq_setup(struct mhi_controller *mhi_cntrl)
@@ -459,10 +463,17 @@ error_request:
 void mhi_deinit_dev_ctxt(struct mhi_controller *mhi_cntrl)
 {
         int i;
-        struct mhi_ctxt *mhi_ctxt = mhi_cntrl->mhi_ctxt;
+        struct mhi_ctxt *mhi_ctxt;
         struct mhi_cmd *mhi_cmd;
         struct mhi_event *mhi_event;
         struct mhi_ring *ring;
+
+        if (!mhi_cntrl || !mhi_cntrl->mhi_ctxt) {
+                mhi_cntrl = NULL;
+                return;
+        }
+
+        mhi_ctxt = mhi_cntrl->mhi_ctxt;
 
         if (mhi_cntrl->mhi_cmd) {
                 mhi_cmd = mhi_cntrl->mhi_cmd;
@@ -473,11 +484,6 @@ void mhi_deinit_dev_ctxt(struct mhi_controller *mhi_cntrl)
                         ring->base = NULL;
                         ring->iommu_base = 0;
                 }
-        }
-
-        if (!mhi_ctxt) {
-                mhi_cntrl->mhi_ctxt = NULL;
-                return;
         }
 
         mhi_free_coherent(mhi_cntrl,
