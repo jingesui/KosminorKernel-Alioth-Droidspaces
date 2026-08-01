@@ -22,6 +22,7 @@
  * formats.
  */
 
+#include <linux/mmap_lock.h>
 #include <linux/slab.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
