@@ -22,7 +22,6 @@
  * formats.
  */
 
-#include <linux/mmap_lock.h>
 #include <linux/slab.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
@@ -1252,10 +1251,6 @@ EXPORT_SYMBOL_GPL(__get_task_comm);
 
 void __set_task_comm(struct task_struct *tsk, const char *buf, bool exec)
 {
-	/* 【新增补丁】如果传入的 tsk 指针为空，直接返回，防止访问 0x880 地址崩溃 */
-	if (unlikely(!tsk))
-		return;
-
 	task_lock(tsk);
 	trace_task_rename(tsk, buf);
 	strlcpy(tsk->comm, buf, sizeof(tsk->comm));
